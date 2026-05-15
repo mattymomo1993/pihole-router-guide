@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi-hole as Full Router | Raspberry Pi 3B+ Build Guide</title>
+<meta name="description" content="Complete guide to turning a Raspberry Pi 3B+ into a full home router with Pi-hole DNS filtering, Unbound recursive resolver, and 802.1Q VLAN trunking over a single ethernet port.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap');
+
+  :root {
+    --bg: #0a0e0a;
+    --surface: #0f1510;
+    --border: #1a2e1a;
+    --green: #00ff41;
+    --green-dark: #003300;
+    --amber: #ffb300;
+    --red: #ff3333;
+    --blue: #4fc3f7;
+    --purple: #ce93d8;
+    --text: #c8e6c9;
+    --muted: #4a6741;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    padding: 24px 16px;
+    background-image: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,255,65,0.015) 2px, rgba(0,255,65,0.015) 4px
+    );
+  }
+
+  .container { max-width: 860px; margin: 0 auto; }
+
+  .header {
+    border: 1px solid var(--green);
+    padding: 28px 24px;
+    margin-bottom: 32px;
+    position: relative;
+    background: linear-gradient(135deg, #0f1510, #0a1a0a);
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 20px; right: 20px; height: 2px;
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green);
+  }
+  .header-label { font-size: 10px; color: var(--green); letter-spacing: 4px; text-transform: uppercase; margin-bottom: 10px; }
+  .header h1 {
+    font-family: 'Exo 2', sans-serif;
+    font-size: clamp(22px, 5vw, 38px);
+    font-weight: 800;
+    color: var(--green);
+    text-shadow: 0 0 24px rgba(0,255,65,0.5);
+    line-height: 1.1;
+  }
+  .header p { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge { font-size: 10px; padding: 3px 10px; border: 1px solid; letter-spacing: 2px; text-transform: uppercase; }
+  .badge-green { border-color: var(--green); color: var(--green); }
+  .badge-amber { border-color: var(--amber); color: var(--amber); }
+  .badge-blue  { border-color: var(--blue);  color: var(--blue);  }
+
+  .toc { border: 1px solid var(--border); background: var(--surface); margin-bottom: 28px; }
+  .section-title {
+    background: var(--green-dark); border-bottom: 1px solid var(--green);
+    padding: 10px 16px; font-size: 11px; letter-spacing: 3px; color: var(--green); text-transform: uppercase;
+  }
+  .toc-list { padding: 14px 20px; list-style: none; }
+  .toc-list li { padding: 4px 0; font-size: 12px; }
+  .toc-list a { color: var(--muted); text-decoration: none; }
+  .toc-list a:hover { color: var(--green); }
+  .toc-list a::before { content: '→ '; color: var(--green-dark); }
+
+  .diagram-section { border: 1px solid var(--border); margin-bottom: 28px; background: var(--surface); }
+  .diagram { padding: 28px 16px; display: flex; flex-direction: column; align-items: center; }
+
+  .node { border: 1px solid; padding: 12px 24px; min-width: 260px; text-align: center; background: #0a0e0a; }
+  .node.isp    { border-color: var(--muted);  color: var(--muted);  }
+  .node.modem  { border-color: var(--blue);   color: var(--blue);   }
+  .node.switch { border-color: var(--amber);  color: var(--amber);  }
+  .node.pi     { border-color: var(--green);  color: var(--green);  box-shadow: 0 0 18px rgba(0,255,65,0.2); }
+  .node.ap     { border-color: var(--purple); color: var(--purple); }
+  .node-label  { font-family: 'Exo 2', sans-serif; font-weight: 600; font-size: 14px; }
+  .node-sub    { font-size: 10px; opacity: 0.7; margin-top: 3px; letter-spacing: 1px; }
+  .node-tag    { font-size: 9px; margin-top: 5px; opacity: 0.6; line-height: 1.6; }
+
+  .arrow { display: flex; flex-direction: column; align-items: center; position: relative; }
+  .arrow-line { width: 2px; height: 22px; background: var(--muted); }
+  .arrow-head { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--muted); }
+  .arrow-label { position: absolute; left: calc(50% + 10px); top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--muted); white-space: nowrap; letter-spacing: 1px; }
+
+  .devices-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; padding: 16px 8px; }
+  .device-chip { border: 1px solid var(--border); padding: 6px 12px; font-size: 11px; color: var(--muted); }
+
+  .stack-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  .stack-table th { background: var(--green-dark); color: var(--green); padding: 8px 12px; text-align: left; letter-spacing: 2px; font-size: 10px; }
+  .stack-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .stack-table tr:hover td { background: rgba(0,255,65,0.03); }
+
+  .steps-section { margin-bottom: 28px; }
+  .step { border: 1px solid var(--border); margin-bottom: 2px; background: var(--surface); }
+  .step-header { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .step-num { font-family: 'Exo 2', sans-serif; font-size: 28px; font-weight: 800; color: var(--green-dark); line-height: 1; min-width: 36px; text-shadow: 0 0 8px rgba(0,255,65,0.3); -webkit-text-stroke: 1px var(--green); }
+  .step-title { font-family: 'Exo 2', sans-serif; font-weight: 600; font-size: 15px; color: var(--green); }
+  .step-subtitle { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .step-body { padding: 16px; }
+
+  .cmd-block { background: #050a05; border: 1px solid var(--green-dark); border-left: 3px solid var(--green); padding: 14px 16px; margin: 10px 0; overflow-x: auto; }
+  .cmd-block code { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--green); white-space: pre; display: block; line-height: 1.8; }
+  .file-block { background: #050a05; border: 1px solid #1a3a1a; padding: 14px 16px; margin: 10px 0; overflow-x: auto; }
+  .file-block .filename { font-size: 10px; color: var(--muted); letter-spacing: 2px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .file-block code { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: #a5d6a7; white-space: pre; display: block; line-height: 1.8; }
+
+  .note { border: 1px solid var(--amber); background: rgba(255,179,0,0.05); padding: 10px 14px; margin: 10px 0; font-size: 12px; color: var(--amber); }
+  .note::before { content: '⚠  NOTE: '; font-weight: bold; }
+  .info { border: 1px solid var(--blue); background: rgba(79,195,247,0.05); padding: 10px 14px; margin: 10px 0; font-size: 12px; color: var(--blue); }
+  .info::before { content: 'ℹ  INFO: '; }
+
+  .hl       { color: var(--green); }
+  .hl-amber { color: var(--amber); }
+  .hl-red   { color: var(--red);   }
+  .hl-blue  { color: var(--blue);  }
+  .hl-muted { color: var(--muted); }
+
+  p { font-size: 13px; line-height: 1.7; margin: 8px 0; color: var(--text); }
+  code { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--green); }
+
+  .footer { text-align: center; padding: 20px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); margin-top: 32px; letter-spacing: 2px; }
+  .footer a { color: var(--muted); text-decoration: none; }
+  .footer a:hover { color: var(--green); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="header-label">// open source build guide</div>
+    <h1>Pi-hole as a Full Home Router<br>on Raspberry Pi 3B+</h1>
+    <p>Convert a Raspberry Pi 3B+ into a full network router with DNS-level ad blocking, recursive DNS resolution, NAT, and DHCP — using a single ethernet port and 802.1Q VLAN trunking over a managed switch.</p>
+    <div class="badge-row">
+      <span class="badge badge-green">Raspberry Pi 3B+</span>
+      <span class="badge badge-amber">802.1Q VLANs</span>
+      <span class="badge badge-green">Pi-hole</span>
+      <span class="badge badge-green">Unbound</span>
+      <span class="badge badge-blue">iptables NAT</span>
+      <span class="badge badge-amber">Gigabit</span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <div class="section-title">// table of contents</div>
+    <ul class="toc-list">
+      <li><a href="#topology">Network Topology Diagram</a></li>
+      <li><a href="#hardware">Hardware &amp; Software Stack</a></li>
+      <li><a href="#step1">Step 01 — Flash Raspberry Pi OS Lite</a></li>
+      <li><a href="#step2">Step 02 — First Boot &amp; System Update</a></li>
+      <li><a href="#step3">Step 03 — Configure VLAN Interfaces</a></li>
+      <li><a href="#step4">Step 04 — Enable IP Forwarding + NAT</a></li>
+      <li><a href="#step5">Step 05 — Install Pi-hole</a></li>
+      <li><a href="#step6">Step 06 — Install Unbound</a></li>
+      <li><a href="#step7">Step 07 — Configure Managed Switch VLANs</a></li>
+      <li><a href="#step8">Step 08 — Configure WiFi Access Point</a></li>
+      <li><a href="#step9">Step 09 — Verify Everything Works</a></li>
+      <li><a href="#step10">Step 10 — Harden &amp; Maintain</a></li>
+    </ul>
+  </div>
+
+  <div class="diagram-section" id="topology">
+    <div class="section-title">// network topology diagram</div>
+    <div class="diagram">
+      <div class="node isp"><div class="node-label">ISP / INTERNET</div><div class="node-sub">coax · dsl · fiber</div></div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="node modem"><div class="node-label">MODEM</div><div class="node-sub">your existing modem</div><div class="node-tag">public WAN IP from ISP</div></div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">ethernet → port 1</div></div>
+      <div class="node switch">
+        <div class="node-label">MANAGED SWITCH</div>
+        <div class="node-sub">TP-Link TL-SG108E · 802.1Q VLANs</div>
+        <div class="node-tag">Port 1: VLAN 10 tagged (WAN — modem)<br>Port 2: VLAN 10+20 tagged (trunk — Pi)<br>Ports 3–8: VLAN 20 untagged (LAN devices)</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">trunk · tagged · port 2</div></div>
+      <div class="node pi">
+        <div class="node-label">RASPBERRY PI 3B+</div>
+        <div class="node-sub">eth0 · single cable · dual VLAN sub-interfaces</div>
+        <div class="node-tag">eth0.10 = WAN · gets modem IP via DHCP<br>eth0.20 = LAN · 192.168.2.1 gateway<br>Pi-hole (DNS + DHCP) · Unbound · iptables NAT</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div><div class="arrow-label">VLAN 20 untagged · port 3</div></div>
+      <div class="node ap">
+        <div class="node-label">WIFI ACCESS POINT</div>
+        <div class="node-sub">any router in bridge mode · DHCP disabled</div>
+        <div class="node-tag">static IP 192.168.2.2 · DNS 192.168.2.1</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="devices-row">
+        <div class="device-chip">📱 Phone</div>
+        <div class="device-chip">💻 Laptop</div>
+        <div class="device-chip">📺 Smart TV</div>
+        <div class="device-chip">🖥️ Desktop</div>
+        <div class="device-chip">🎮 Console</div>
+        <div class="device-chip">🔌 IoT</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram-section" id="hardware">
+    <div class="section-title">// hardware &amp; software stack</div>
+    <div style="padding:16px;">
+      <table class="stack-table">
+        <tr><th>COMPONENT</th><th>WHAT</th><th>ROLE</th></tr>
+        <tr><td class="hl">Raspberry Pi 3B+</td><td>Single-board computer</td><td>Router · DNS · firewall · DHCP</td></tr>
+        <tr><td class="hl-amber">TP-Link TL-SG108E</td><td>8-port managed switch ~$30</td><td>802.1Q VLAN trunk · device access</td></tr>
+        <tr><td class="hl">Pi-hole</td><td>DNS sinkhole software</td><td>Network-wide ad &amp; tracker blocking</td></tr>
+        <tr><td class="hl">Unbound</td><td>Recursive DNS resolver</td><td>Full DNS resolution · no upstream dependency</td></tr>
+        <tr><td class="hl-blue">iptables</td><td>Linux kernel firewall</td><td>NAT · packet forwarding · firewall rules</td></tr>
+        <tr><td class="hl-blue">vlan (8021q)</td><td>Kernel module</td><td>VLAN sub-interfaces on single eth0 port</td></tr>
+        <tr><td class="hl">dnsmasq</td><td>Bundled with Pi-hole</td><td>DHCP server for all LAN devices</td></tr>
+        <tr><td>Raspberry Pi OS Lite</td><td>64-bit Debian-based OS</td><td>Base headless system</td></tr>
+        <tr><td class="hl-amber">UPS (recommended)</td><td>e.g. APC BE600M1 ~$80</td><td>Keeps modem + switch + Pi alive during outages</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-bottom:2px;">// step-by-step setup</div>
+  <div class="steps-section" style="margin-top:2px;">
+
+    <div class="step" id="step1">
+      <div class="step-header"><div class="step-num">01</div><div><div class="step-title">Flash Raspberry Pi OS Lite (64-bit)</div><div class="step-subtitle">headless · no desktop · minimum RAM usage</div></div></div>
+      <div class="step-body">
+        <p>Use <strong>Raspberry Pi Imager</strong>. Select <strong>Raspberry Pi OS Lite (64-bit)</strong>. Open advanced settings (⚙) before writing:</p>
+        <div class="file-block">
+          <div class="filename">imager advanced settings</div>
+          <code>hostname:  <span class="hl">pihole</span>
+SSH:       <span class="hl">enabled</span>
+username:  pi
+password:  [strong password — not default]
+WiFi:      <span class="hl-red">do NOT configure</span> — ethernet only</code>
+        </div>
+        <div class="note">Do not use Raspberry Pi OS Desktop — it wastes RAM the router stack needs.</div>
+      </div>
+    </div>
+
+    <div class="step" id="step2">
+      <div class="step-header"><div class="step-num">02</div><div><div class="step-title">First Boot &amp; System Update</div><div class="step-subtitle">SSH in · update · install VLAN tools</div></div></div>
+      <div class="step-body">
+        <div class="cmd-block"><code><span class="hl-muted"># SSH in</span>
+ssh pi@pihole.local
+
+<span class="hl-muted"># Update all packages</span>
+sudo apt update && sudo apt full-upgrade -y
+
+<span class="hl-muted"># Install required tools</span>
+sudo apt install -y vlan iptables iptables-persistent curl
+
+<span class="hl-muted"># Load 802.1Q kernel module now</span>
+sudo modprobe 8021q
+
+<span class="hl-muted"># Persist on boot</span>
+echo "8021q" | sudo tee -a /etc/modules</code></div>
+      </div>
+    </div>
+
+    <div class="step" id="step3">
+      <div class="step-header"><div class="step-num">03</div><div><div class="step-title">Configure VLAN Interfaces</div><div class="step-subtitle">eth0.10 = WAN · eth0.20 = LAN · single cable</div></div></div>
+      <div class="step-body">
+        <div class="info">One physical ethernet cable carries both VLANs via 802.1Q tagging. The managed switch separates them — no second NIC needed.</div>
+        <div class="file-block">
+          <div class="filename">/etc/network/interfaces</div>
+          <code><span class="hl-muted"># Loopback</span>
+auto lo
+iface lo inet loopback
+
+<span class="hl-muted"># Physical port — no IP, carries tagged frames</span>
+auto eth0
+iface eth0 inet manual
+
+<span class="hl-muted"># WAN — VLAN 10 — gets IP from modem</span>
+auto eth0.<span class="hl">10</span>
+iface eth0.<span class="hl">10</span> inet dhcp
+  vlan-raw-device eth0
+
+<span class="hl-muted"># LAN — VLAN 20 — Pi is the gateway</span>
+auto eth0.<span class="hl">20</span>
+iface eth0.<span class="hl">20</span> inet static
+  address <span class="hl-amber">192.168.2.1</span>
+  netmask 255.255.255.0
+  vlan-raw-device eth0</code>
+        </div>
+        <div class="cmd-block"><code>sudo systemctl restart networking</code></div>
+      </div>
+    </div>
+
+    <div class="step" id="step4">
+      <div class="step-header"><div class="step-num">04</div><div><div class="step-title">Enable IP Forwarding + NAT</div><div class="step-subtitle">this is what makes it an actual router</div></div></div>
+      <div class="step-body">
+        <div class="cmd-block"><code><span class="hl-muted"># Enable IP forwarding — persist across reboots</span>
+echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+<span class="hl-muted"># NAT — masquerade LAN traffic out WAN</span>
+sudo iptables -t nat -A POSTROUTING -o eth0.10 -j MASQUERADE
+
+<span class="hl-muted"># Allow return traffic from WAN to LAN</span>
+sudo iptables -A FORWARD -i eth0.10 -o eth0.20 \
+  -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+<span class="hl-muted"># Allow LAN to initiate connections out</span>
+sudo iptables -A FORWARD -i eth0.20 -o eth0.10 -j ACCEPT
+
+<span class="hl-muted"># Save rules — survives reboot</span>
+sudo netfilter-persistent save</code></div>
+        <div class="note">Without <code>net.ipv4.ip_forward=1</code> the Pi receives packets but drops them instead of routing. This single line is what separates a router from a regular Linux host.</div>
+      </div>
+    </div>
+
+    <div class="step" id="step5">
+      <div class="step-header"><div class="step-num">05</div><div><div class="step-title">Install Pi-hole</div><div class="step-subtitle">DNS sinkhole + DHCP server</div></div></div>
+      <div class="step-body">
+        <div class="cmd-block"><code><span class="hl-muted"># Official installer</span>
+curl -sSL https://install.pi-hole.net | bash</code></div>
+        <p>Installer prompts — choose:</p>
+        <div class="file-block">
+          <div class="filename">pi-hole installer selections</div>
+          <code>Interface:     <span class="hl">eth0.20</span>           ← LAN interface only
+Upstream DNS:  <span class="hl">127.0.0.1#5335</span>    ← Unbound (set up next)
+Block lists:   default is fine to start
+Admin web UI:  <span class="hl">Yes</span>
+Log queries:   your preference
+Privacy mode:  0 (show all)</code>
+        </div>
+        <div class="cmd-block"><code><span class="hl-muted"># Enable Pi-hole DHCP (web UI: Settings → DHCP, or CLI):</span>
+sudo pihole -a enabledhcp <span class="hl-amber">192.168.2.10</span> <span class="hl-amber">192.168.2.254</span> <span class="hl-amber">192.168.2.1</span> 24 pihole.local
+<span class="hl-muted">#                          range-start     range-end       gateway     prefix domain</span></code></div>
+        <div class="info">DHCP range 192.168.2.10–254 · Gateway 192.168.2.1 (Pi) · Domain pihole.local</div>
+      </div>
+    </div>
+
+    <div class="step" id="step6">
+      <div class="step-header"><div class="step-num">06</div><div><div class="step-title">Install Unbound</div><div class="step-subtitle">recursive DNS · no Google · no Cloudflare</div></div></div>
+      <div class="step-body">
+        <p>Unbound resolves DNS by walking the tree from root servers directly — zero reliance on third-party resolvers.</p>
+        <div class="cmd-block"><code>sudo apt install -y unbound</code></div>
+        <div class="file-block">
+          <div class="filename">/etc/unbound/unbound.conf.d/pi-hole.conf</div>
+          <code>server:
+    verbosity: 0
+    interface: 127.0.0.1
+    port: 5335
+    do-ip4: yes
+    do-udp: yes
+    do-tcp: yes
+    do-ip6: no
+
+    <span class="hl-muted"># Security</span>
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    use-caps-for-id: no
+    edns-buffer-size: 1472
+
+    <span class="hl-muted"># Privacy</span>
+    hide-identity: yes
+    hide-version: yes
+
+    <span class="hl-muted"># Cache</span>
+    cache-min-ttl: 0
+    cache-max-ttl: 86400
+    prefetch: yes
+    num-threads: 1
+
+    <span class="hl-muted"># Root hints</span>
+    root-hints: "/var/lib/unbound/root.hints"</code>
+        </div>
+        <div class="cmd-block"><code><span class="hl-muted"># Download root hints</span>
+sudo wget -O /var/lib/unbound/root.hints \
+  https://www.internic.net/domain/named.root
+
+sudo systemctl restart unbound
+
+<span class="hl-muted"># Verify</span>
+dig google.com @127.0.0.1 -p 5335</code></div>
+        <p>In Pi-hole web UI: <strong>Settings → DNS</strong> → uncheck all upstream providers → set custom upstream to <code>127.0.0.1#5335</code></p>
+      </div>
+    </div>
+
+    <div class="step" id="step7">
+      <div class="step-header"><div class="step-num">07</div><div><div class="step-title">Configure Managed Switch VLANs</div><div class="step-subtitle">TP-Link TL-SG108E · web UI · 802.1Q</div></div></div>
+      <div class="step-body">
+        <div class="info">Configure the switch BEFORE connecting the modem or Pi. Access the switch web UI by connecting a laptop directly — default IP is usually 192.168.0.1.</div>
+        <div class="file-block">
+          <div class="filename">switch port assignment — TL-SG108E</div>
+          <code>Port 1:  <span class="hl-red">VLAN 10 tagged</span>    ← modem (WAN uplink)
+Port 2:  <span class="hl">VLAN 10+20 tagged</span>  ← Raspberry Pi (trunk)
+Port 3:  <span class="hl-amber">VLAN 20 untagged</span>   ← WiFi access point
+Port 4:  <span class="hl-amber">VLAN 20 untagged</span>   ← wired device
+Port 5:  <span class="hl-amber">VLAN 20 untagged</span>   ← wired device
+Port 6:  <span class="hl-amber">VLAN 20 untagged</span>   ← wired device
+Port 7:  <span class="hl-amber">VLAN 20 untagged</span>   ← wired device
+Port 8:  <span class="hl-amber">VLAN 20 untagged</span>   ← wired device</code>
+        </div>
+        <div class="note">Port 2 (Pi trunk) MUST be tagged for BOTH VLANs. Device ports are untagged VLAN 20 only — they never see VLAN 10 (WAN) traffic.</div>
+      </div>
+    </div>
+
+    <div class="step" id="step8">
+      <div class="step-header"><div class="step-num">08</div><div><div class="step-title">Configure WiFi Access Point</div><div class="step-subtitle">any router · bridge mode · DHCP off</div></div></div>
+      <div class="step-body">
+        <p>Your existing router becomes a dumb WiFi access point. Pi-hole handles all routing and DHCP. Works with any router brand that supports bridge or AP mode.</p>
+        <div class="file-block">
+          <div class="filename">access point settings (any router)</div>
+          <code>Mode:         <span class="hl">Bridge Mode</span>  (or AP mode / disable router)
+DHCP Server:  <span class="hl-red">Disabled</span>
+Static IP:    <span class="hl-amber">192.168.2.2</span>   (within Pi's LAN subnet)
+Gateway:      <span class="hl-amber">192.168.2.1</span>   (Pi-hole)
+DNS:          <span class="hl">192.168.2.1</span>   (Pi-hole)
+WiFi SSID:    your existing network name
+WiFi pass:    unchanged</code>
+        </div>
+        <div class="info">In bridge mode the router passes all traffic to the Pi. Wireless devices get IPs and DNS from Pi-hole automatically — full filtering on both WiFi and wired.</div>
+      </div>
+    </div>
+
+    <div class="step" id="step9">
+      <div class="step-header"><div class="step-num">09</div><div><div class="step-title">Verify Everything Works</div><div class="step-subtitle">routing · DNS · blocking · DHCP</div></div></div>
+      <div class="step-body">
+        <div class="cmd-block"><code><span class="hl-muted"># Check WAN got an IP from modem</span>
+ip addr show eth0.10
+
+<span class="hl-muted"># Check LAN interface</span>
+ip addr show eth0.20
+
+<span class="hl-muted"># Check routing table — default route via eth0.10</span>
+ip route show
+
+<span class="hl-muted"># Ping internet from Pi</span>
+ping -c 3 8.8.8.8
+
+<span class="hl-muted"># Test Unbound recursive resolution</span>
+dig google.com @127.0.0.1 -p 5335
+
+<span class="hl-muted"># Test Pi-hole blocking — should return 0.0.0.0</span>
+dig doubleclick.net @192.168.2.1</code></div>
+        <div class="cmd-block"><code><span class="hl-muted"># From any device on the network:</span>
+
+<span class="hl-muted"># Gateway should be 192.168.2.1</span>
+ip route           <span class="hl-muted"># Linux</span>
+netstat -rn        <span class="hl-muted"># macOS</span>
+
+<span class="hl-muted"># DNS should be 192.168.2.1</span>
+cat /etc/resolv.conf
+
+<span class="hl-muted"># Pi-hole admin dashboard</span>
+http://192.168.2.1/admin</code></div>
+      </div>
+    </div>
+
+    <div class="step" id="step10">
+      <div class="step-header"><div class="step-num">10</div><div><div class="step-title">Harden &amp; Maintain</div><div class="step-subtitle">watchdog · UPS · auto-updates · blocklists</div></div></div>
+      <div class="step-body">
+        <div class="cmd-block"><code><span class="hl-muted"># Hardware watchdog — auto-reboot on freeze</span>
+sudo apt install -y watchdog
+echo "bcm2835_wdt" | sudo tee -a /etc/modules
+sudo systemctl enable watchdog --now
+
+<span class="hl-muted"># Unattended security upgrades</span>
+sudo apt install -y unattended-upgrades
+sudo dpkg-reconfigure unattended-upgrades
+
+<span class="hl-muted"># Update Pi-hole binary</span>
+pihole -up
+
+<span class="hl-muted"># Update blocklists</span>
+pihole -g
+
+<span class="hl-muted"># Schedule weekly gravity update — 3am Sunday</span>
+echo "0 3 * * 0 root pihole -g" | sudo tee /etc/cron.d/pihole-gravity</code></div>
+        <div class="note">If the Pi loses power your entire network loses internet. Plug the modem, switch, and Pi all into a UPS to keep the full stack alive. The watchdog handles software freezes; the UPS handles power loss — you need both.</div>
+        <div class="info">Watchdog works by having the OS constantly reset a hardware timer. If the system freezes and stops resetting it, the timer expires and forces a hard reboot — fully automatic, no intervention needed.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    PI-HOLE ROUTER BUILD GUIDE · RASPBERRY PI 3B+ · 802.1Q VLAN TRUNK · SINGLE ETHERNET<br>
+    <span style="margin-top:6px;display:block;">
+      Open source · MIT License ·
+      <a href="https://pi-hole.net" target="_blank">pi-hole.net</a> ·
+      <a href="https://nlnetlabs.nl/projects/unbound/" target="_blank">unbound</a> ·
+      <a href="https://github.com" target="_blank">github.com</a>
+    </span>
+  </div>
+
+</div>
+</body>
+</html>
