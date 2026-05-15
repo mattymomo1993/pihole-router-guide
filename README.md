@@ -1,4 +1,3 @@
-
 <div align="center">
 
 # 🛡️ Pi-hole as a Full Home Router
