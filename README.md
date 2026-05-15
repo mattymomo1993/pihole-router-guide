@@ -19,7 +19,7 @@
 
 ## 📖 Full Interactive Guide
 
-👉 **[View the styled guide on GitHub Pages](https://yourusername.github.io/pihole-router-guide)**
+👉 **[View the styled guide on GitHub Pages](https://mattymomo1993.github.io/pihole-router-guide)**
 
 ---
 
